@@ -5,8 +5,6 @@
 
 import React, { useState, useEffect, useRef, FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
-import { GoogleGenAI } from "@google/genai";
-import type { Chat } from "@google/genai";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 
@@ -65,45 +63,42 @@ const ChatbotApp: React.FC = () => {
   // Zustand, der anzeigt, ob der Bot gerade eine Antwort generiert
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  // useRef wird verwendet, um die Chat-Instanz über Renderings hinweg beizubehalten,
-  // ohne bei jeder Zustandsänderung eine neue Instanz zu erstellen.
-  const chatRef = useRef<Chat | null>(null);
-
   // Referenz auf das Nachrichtenlisten-Element, um das Scrollen zu steuern
   const messageListRef = useRef<HTMLDivElement | null>(null);
 
-  // Dieser useEffect-Hook wird nur einmal beim ersten Rendern der Komponente ausgeführt.
-  // Er initialisiert den Gemini-Chatbot.
+  // Prüft, ob der Vite-Server den Schlüssel serverseitig geladen hat (ohne ihn ans Frontend zu geben).
   useEffect(() => {
-    const apiKey = import.meta.env.VITE_API_KEY;
-    if (!apiKey) {
-      // Ohne API-Key keine Initialisierung, stattdessen klare Meldung anzeigen.
-      setMessages([
-        {
-          sender: 'bot',
-          text: 'Fehlende Konfiguration: Bitte setzen Sie `VITE_API_KEY` in einer `.env`-Datei und starten Sie den Dev-Server neu.',
-        },
-      ]);
-      return;
-    }
-
-    // Initialisiert die GoogleGenAI-Klasse mit dem API-Schlüssel
-    const ai = new GoogleGenAI({ apiKey });
-
-    // Erstellt eine neue Chat-Sitzung mit dem spezifischen Modell
-    // und einer Systemanweisung, die den Kontext für den Bot festlegt.
-    const newChat = ai.chats.create({
-      model: 'gemini-2.5-flash',
-      config: {
-        // Diese Anweisung "trainiert" den Bot darauf, wie er sich verhalten soll.
-        systemInstruction: "Du bist ein hilfsbereiter und freundlicher Support-Mitarbeiter für die Software 'ibo-Audit'. Antworte immer auf Deutsch. Sei präzise und professionell in deinen Antworten. Nutze Markdown für Formatierungen wie Fettdruck. Verwende niemals Tabellen.",
-      },
-    });
-    chatRef.current = newChat;
-
-    // Fügt eine erste Willkommensnachricht vom Bot hinzu.
-    setMessages([{ sender: 'bot', text: 'Hallo! Wie kann ich Ihnen heute bezüglich **ibo-Audit** helfen?' }]);
-  }, []); // Das leere Abhängigkeitsarray stellt sicher, dass der Hook nur einmal läuft.
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch('/api/gemini/status');
+        const data = (await r.json()) as { configured?: boolean };
+        if (cancelled) return;
+        if (!data.configured) {
+          setMessages([
+            {
+              sender: 'bot',
+              text: 'Fehlende Konfiguration: Legen Sie `GEMINI_API_KEY` in `.env.local` an (siehe `.env.example`) und starten Sie `npm run dev` neu. Den Schlüssel niemals ins Repository committen.',
+            },
+          ]);
+          return;
+        }
+        setMessages([{ sender: 'bot', text: 'Hallo! Wie kann ich Ihnen heute bezüglich **ibo-Audit** helfen?' }]);
+      } catch {
+        if (!cancelled) {
+          setMessages([
+            {
+              sender: 'bot',
+              text: 'Der Chat-Server ist nicht erreichbar. Starten Sie die App mit `npm run dev` oder `npm run build` und `npm run preview`.',
+            },
+          ]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Dieser useEffect-Hook wird immer dann ausgeführt, wenn sich die `messages`-Liste ändert.
   // Er scrollt die Nachrichtenliste automatisch zum Ende, damit die neueste Nachricht sichtbar ist.
@@ -123,37 +118,32 @@ const ChatbotApp: React.FC = () => {
       return;
     }
 
-    // Erstellt die neue Nachricht des Benutzers
     const userMessage: Message = { sender: 'user', text: trimmedInput };
-    // Fügt die Benutzernachricht zur Nachrichtenliste hinzu
-    setMessages(prevMessages => [...prevMessages, userMessage]);
-    // Setzt das Eingabefeld zurück
+    const historyForApi = [...messages, userMessage];
+    setMessages(historyForApi);
     setInputValue('');
-    // Aktiviert den Ladezustand
     setIsLoading(true);
 
     try {
-      // Stellt sicher, dass die Chat-Instanz existiert
-      if (!chatRef.current) {
-        throw new Error("Chat ist nicht initialisiert.");
+      const response = await fetch('/api/gemini/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: historyForApi }),
+      });
+      const payload = (await response.json()) as { text?: string; error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? `HTTP ${response.status}`);
       }
-      
-      // Sendet die Nachricht des Benutzers an die Gemini API
-      const response = await chatRef.current.sendMessage({ message: trimmedInput });
 
-      // Extrahiert den Text aus der API-Antwort
-      const botResponseText = response.text;
-      
-      // Erstellt die neue Nachricht des Bots
+      const botResponseText = payload.text ?? '';
       const botMessage: Message = { sender: 'bot', text: botResponseText };
-      // Fügt die Bot-Nachricht zur Nachrichtenliste hinzu
-      setMessages(prevMessages => [...prevMessages, botMessage]);
-
+      setMessages([...historyForApi, botMessage]);
     } catch (error) {
-      console.error("Fehler bei der Kommunikation mit der Gemini API:", error);
+      console.error('Fehler bei der Kommunikation mit der Gemini API:', error);
       // Fügt eine Fehlermeldung zum Chat hinzu, wenn etwas schiefgeht
       const errorMessage: Message = { sender: 'bot', text: 'Entschuldigung, es ist ein Fehler aufgetreten. Bitte versuchen Sie es später erneut.' };
-      setMessages(prevMessages => [...prevMessages, errorMessage]);
+      setMessages([...historyForApi, errorMessage]);
     } finally {
       // Deaktiviert den Ladezustand, egal ob erfolgreich oder nicht
       setIsLoading(false);

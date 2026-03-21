@@ -1,0 +1,94 @@
+/**
+ * Liest GEMINI_API_KEY nur im Node-Kontext (Vite Dev/Preview) — nicht im Browser-Bundle.
+ */
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { Connect } from 'vite';
+
+const MODEL = 'gemini-2.5-flash';
+
+const SYSTEM_INSTRUCTION =
+  "Du bist ein hilfsbereiter und freundlicher Support-Mitarbeiter für die Software 'ibo-Audit'. Antworte immer auf Deutsch. Sei präzise und professionell in deinen Antworten. Nutze Markdown für Formatierungen wie Fettdruck. Verwende niemals Tabellen.";
+
+interface ChatMessage {
+  sender: 'user' | 'bot';
+  text: string;
+}
+
+function resolveApiKey(env: Record<string, string>): string | undefined {
+  return env.GEMINI_API_KEY?.trim() || env.VITE_API_KEY?.trim();
+}
+
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => chunks.push(c));
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
+function sendJson(res: ServerResponse, status: number, data: unknown) {
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.end(JSON.stringify(data));
+}
+
+export function geminiProxyMiddleware(env: Record<string, string>): Connect.NextHandleFunction {
+  return async (req, res, next) => {
+    const pathOnly = req.url?.split('?')[0] ?? '';
+
+    if (pathOnly === '/api/gemini/status' && req.method === 'GET') {
+      const configured = Boolean(resolveApiKey(env));
+      sendJson(res, 200, { configured });
+      return;
+    }
+
+    if (pathOnly !== '/api/gemini/chat' || req.method !== 'POST') {
+      next();
+      return;
+    }
+
+    const apiKey = resolveApiKey(env);
+    if (!apiKey) {
+      sendJson(res, 503, { error: 'missing_api_key' });
+      return;
+    }
+
+    let body: { messages?: ChatMessage[] };
+    try {
+      const raw = await readBody(req);
+      body = JSON.parse(raw || '{}') as { messages?: ChatMessage[] };
+    } catch {
+      sendJson(res, 400, { error: 'invalid_json' });
+      return;
+    }
+
+    const messages = Array.isArray(body.messages) ? body.messages : [];
+    const contents = messages
+      .filter((m) => m && typeof m.text === 'string' && m.text.trim())
+      .map((m) => ({
+        role: (m.sender === 'user' ? 'user' : 'model') as 'user' | 'model',
+        parts: [{ text: m.text }],
+      }));
+
+    if (contents.length === 0 || contents[contents.length - 1]!.role !== 'user') {
+      sendJson(res, 400, { error: 'invalid_messages' });
+      return;
+    }
+
+    try {
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: MODEL,
+        contents,
+        config: { systemInstruction: SYSTEM_INSTRUCTION },
+      });
+      const text = response.text ?? '';
+      sendJson(res, 200, { text });
+    } catch (e) {
+      console.error('[gemini-proxy]', e);
+      sendJson(res, 502, { error: 'gemini_failed' });
+    }
+  };
+}
