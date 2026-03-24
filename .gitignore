@@ -13,6 +13,7 @@ dist-ssr
 
 # Umgebung & Geheimnisse (niemals committen)
 .env
+.env.local
 .env.*
 !.env.example
 *.local
