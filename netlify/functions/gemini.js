@@ -56,12 +56,16 @@ exports.handler = async (event, context) => {
     }
 
     const messages = Array.isArray(body.messages) ? body.messages : [];
-    const contents = messages
+    let contents = messages
       .filter((m) => m && typeof m.text === 'string' && m.text.trim())
       .map((m) => ({
         role: m.sender === 'user' ? 'user' : 'model',
         parts: [{ text: m.text }],
       }));
+
+    while (contents.length > 0 && contents[0].role === 'model') {
+      contents = contents.slice(1);
+    }
 
     if (contents.length === 0 || contents[contents.length - 1].role !== 'user') {
       return {
@@ -85,7 +89,7 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({ text }),
       };
     } catch (e) {
-      console.error('[gemini-proxy]', e);
+      console.error('[gemini-proxy]', e && e.message ? e.message : e);
       return {
         statusCode: 502,
         headers,

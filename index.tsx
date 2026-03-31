@@ -174,7 +174,7 @@ const ChatbotApp: React.FC = () => {
                 alt=""
                 aria-hidden="true"
               />
-              <h1>ibo-Audit Support-Chat</h1>
+              <h1>ibo-Audit Chatbot</h1>
             </div>
           </header>
           <div className="message-list" ref={messageListRef}>

@@ -64,12 +64,17 @@ export function geminiProxyMiddleware(env: Record<string, string>): Connect.Next
     }
 
     const messages = Array.isArray(body.messages) ? body.messages : [];
-    const contents = messages
+    let contents = messages
       .filter((m) => m && typeof m.text === 'string' && m.text.trim())
       .map((m) => ({
         role: (m.sender === 'user' ? 'user' : 'model') as 'user' | 'model',
         parts: [{ text: m.text }],
       }));
+
+    // Gemini erwartet üblicherweise, dass die Historie mit user beginnt; die UI-Begrüßung ist model.
+    while (contents.length > 0 && contents[0]!.role === 'model') {
+      contents = contents.slice(1);
+    }
 
     if (contents.length === 0 || contents[contents.length - 1]!.role !== 'user') {
       sendJson(res, 400, { error: 'invalid_messages' });
@@ -87,7 +92,8 @@ export function geminiProxyMiddleware(env: Record<string, string>): Connect.Next
       const text = response.text ?? '';
       sendJson(res, 200, { text });
     } catch (e) {
-      console.error('[gemini-proxy]', e);
+      const err = e as { message?: string; status?: number };
+      console.error('[gemini-proxy]', err?.message ?? err?.status ?? e);
       sendJson(res, 502, { error: 'gemini_failed' });
     }
   };
