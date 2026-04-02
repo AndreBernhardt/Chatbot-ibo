@@ -15,3 +15,9 @@
   from = "/api/gemini/*"
   to = "/.netlify/functions/gemini"
   status = 200
+
+# HTML nicht aggressiv cachen (Vite-Build: /index.html)
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"

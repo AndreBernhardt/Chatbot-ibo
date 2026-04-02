@@ -86,7 +86,7 @@ const ChatbotApp: React.FC = () => {
         setMessages([
           {
             sender: 'bot',
-            text: 'Hallo! Ich bin **ibo-audit chatbot**, Ihr Assistent für die Software **ibo-Audit**. Womit kann ich Ihnen helfen?',
+            text: 'Hallo! Ich bin **ibo-audit Chatbot**, Ihr Assistent für die Software **ibo-Audit**. Womit kann ich Ihnen helfen?',
           },
         ]);
       } catch {
@@ -179,7 +179,7 @@ const ChatbotApp: React.FC = () => {
                 alt=""
                 aria-hidden="true"
               />
-              <h1>ibo-audit chatbot</h1>
+              <h1>ibo-audit Chatbot</h1>
             </div>
           </header>
           <div className="message-list" ref={messageListRef}>
