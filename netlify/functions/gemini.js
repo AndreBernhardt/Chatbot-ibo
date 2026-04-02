@@ -1,5 +1,3 @@
-const { GoogleGenAI } = require('@google/genai');
-
 const MODEL = 'gemini-2.5-flash';
 
 const SYSTEM_INSTRUCTION =
@@ -9,8 +7,21 @@ function resolveApiKey(env) {
   return (env.GEMINI_API_KEY || env.VITE_API_KEY || '').trim();
 }
 
-exports.handler = async (event, context) => {
-  // CORS headers
+function extractTextFromResponse(data) {
+  const parts = data?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) {
+    return '';
+  }
+  let text = '';
+  for (const p of parts) {
+    if (p && typeof p.text === 'string' && !p.thought) {
+      text += p.text;
+    }
+  }
+  return text;
+}
+
+exports.handler = async (event) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
@@ -25,7 +36,6 @@ exports.handler = async (event, context) => {
     };
   }
 
-  // Nach Netlify-Rewrite ist event.path oft /.netlify/functions/gemini — daher nur Methode.
   if (event.httpMethod === 'GET') {
     const configured = Boolean(resolveApiKey(process.env));
     return {
@@ -76,14 +86,44 @@ exports.handler = async (event, context) => {
       };
     }
 
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
     try {
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: MODEL,
-        contents,
-        config: { systemInstruction: SYSTEM_INSTRUCTION },
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [{ text: SYSTEM_INSTRUCTION }],
+          },
+          contents,
+        }),
       });
-      const text = response.text || '';
+
+      const raw = await res.text();
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        console.error('[gemini-proxy] Non-JSON response', res.status, raw.slice(0, 400));
+        return {
+          statusCode: 502,
+          headers,
+          body: JSON.stringify({ error: 'gemini_failed' }),
+        };
+      }
+
+      if (!res.ok) {
+        const msg = data?.error?.message || raw.slice(0, 300);
+        console.error('[gemini-proxy] API error', res.status, msg);
+        return {
+          statusCode: 502,
+          headers,
+          body: JSON.stringify({ error: 'gemini_failed' }),
+        };
+      }
+
+      const text = extractTextFromResponse(data);
       return {
         statusCode: 200,
         headers,
