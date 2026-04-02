@@ -83,7 +83,12 @@ const ChatbotApp: React.FC = () => {
           ]);
           return;
         }
-        setMessages([{ sender: 'bot', text: 'Hallo! Wie kann ich Ihnen heute bezüglich **ibo-Audit** helfen?' }]);
+        setMessages([
+          {
+            sender: 'bot',
+            text: 'Hallo! Ich bin **ibo-audit chatbot**, Ihr Assistent für die Software **ibo-Audit**. Womit kann ich Ihnen helfen?',
+          },
+        ]);
       } catch {
         if (!cancelled) {
           setMessages([
@@ -174,7 +179,7 @@ const ChatbotApp: React.FC = () => {
                 alt=""
                 aria-hidden="true"
               />
-              <h1>ibo-Audit Chatbot</h1>
+              <h1>ibo-audit chatbot</h1>
             </div>
           </header>
           <div className="message-list" ref={messageListRef}>
