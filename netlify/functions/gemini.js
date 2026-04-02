@@ -25,7 +25,8 @@ exports.handler = async (event, context) => {
     };
   }
 
-  if (event.path.endsWith('/status') && event.httpMethod === 'GET') {
+  // Nach Netlify-Rewrite ist event.path oft /.netlify/functions/gemini — daher nur Methode.
+  if (event.httpMethod === 'GET') {
     const configured = Boolean(resolveApiKey(process.env));
     return {
       statusCode: 200,
@@ -34,7 +35,7 @@ exports.handler = async (event, context) => {
     };
   }
 
-  if (event.path.endsWith('/chat') && event.httpMethod === 'POST') {
+  if (event.httpMethod === 'POST') {
     const apiKey = resolveApiKey(process.env);
     if (!apiKey) {
       return {

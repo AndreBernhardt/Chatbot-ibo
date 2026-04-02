@@ -2,10 +2,16 @@
   publish = "dist"
   functions = "netlify/functions"
 
+# @google/genai benötigt Node 20+
+[build.environment]
+  NODE_VERSION = "20"
+
 [functions]
   directory = "netlify/functions"
 
+# Ein einzelnes Function-File „gemini.js“ → nur /.netlify/functions/gemini
+# (nicht /.netlify/functions/gemini/chat — das gäbe kein Handler / 502).
 [[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
+  from = "/api/gemini/*"
+  to = "/.netlify/functions/gemini"
   status = 200
